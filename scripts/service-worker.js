@@ -10,16 +10,18 @@ const UPLOAD = 'upload';
 const OFFSCREEN_DOCUMENT_PATH = '/offscreen/offscreen.html';
 let isDark = false;
 
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
+
 // Cross-browser: chrome.action (MV3) vs chrome.browserAction (MV2/Firefox)
-const browserAction = chrome.action || chrome.browserAction;
+const browserAction = browserAPI.action || browserAPI.browserAction;
 
 // Feature-detect: is the offscreen API available? (Chrome only)
-const hasOffscreenAPI = typeof chrome.offscreen !== 'undefined';
+const hasOffscreenAPI = typeof browserAPI.offscreen !== 'undefined';
 
-chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+browserAPI.runtime.onInstalled.addListener(async ({ reason }) => {
     switch (reason) {
         case 'install':
-            chrome.storage.local.set({
+            browserAPI.storage.local.set({
                 buttons: [],
                 upload: [],
                 ignore: [],
@@ -33,15 +35,15 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
             });
             break;
         case 'update':
-            const { buttons, upload, contentful } = await chrome.storage.local.get([BUTTONS, UPLOAD, CONTENTFUL]);
+            const { buttons, upload, contentful } = await browserAPI.storage.local.get([BUTTONS, UPLOAD, CONTENTFUL]);
             if (buttons.length === 0) break;
             let counter = buttons.length - 1;
             buttons.map(button => { button.id = counter--; button.hidden = button.hidden ?? false; } );
-            chrome.storage.local.set({ buttons: buttons });
-            if (!upload) chrome.storage.local.set({ 'upload': [] });
+            browserAPI.storage.local.set({ buttons: buttons });
+            if (!upload) browserAPI.storage.local.set({ 'upload': [] });
             if (!contentful.contentDeliveryApiKey) {
                 contentful.contentDeliveryApiKey = '';
-                chrome.storage.local.set({ 'contentful': contentful });
+                browserAPI.storage.local.set({ 'contentful': contentful });
             }
             break;
         default:
@@ -49,12 +51,12 @@ chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     }
 });
 
-chrome.storage.onChanged.addListener(async (obj) => {
+browserAPI.storage.onChanged.addListener(async (obj) => {
     switch (true) {
         case obj.hasOwnProperty(MAXIMUM):
-            const { buttons } = await chrome.storage.local.get(BUTTONS);
+            const { buttons } = await browserAPI.storage.local.get(BUTTONS);
             while (buttons.length >= obj.maximum.newValue) buttons.pop();
-            chrome.storage.local.set({ 'buttons': buttons });
+            browserAPI.storage.local.set({ 'buttons': buttons });
             break;
         case obj.hasOwnProperty(UPLOAD):
             uploadOffscreen();
@@ -148,27 +150,27 @@ const ffSync = async (cntfl) => {
         text: b.fields.text,
         stolenAt: b.sys.createdAt,
     }));
-    chrome.storage.local.set({ buttons: value });
+    browserAPI.storage.local.set({ buttons: value });
 };
 
 const ffSendDone = async () => {
-    const { upload } = await chrome.storage.local.get(UPLOAD);
+    const { upload } = await browserAPI.storage.local.get(UPLOAD);
     upload.pop();
-    chrome.runtime.sendMessage({ type: 'full-refresh', target: 'stolen-buttons' });
-    chrome.storage.local.set({ 'upload': upload });
+    browserAPI.runtime.sendMessage({ type: 'full-refresh', target: 'stolen-buttons' });
+    browserAPI.storage.local.set({ 'upload': upload });
 };
 
 // ── Upload dispatcher (Chrome offscreen vs Firefox inline) ───────────
 
 const uploadOffscreen = async () => {
-    const { upload, contentful } = await chrome.storage.local.get([UPLOAD, CONTENTFUL]);
+    const { upload, contentful } = await browserAPI.storage.local.get([UPLOAD, CONTENTFUL]);
     if (!(contentful[CNTFL_MGMT_API_KEY] && contentful[CNTFL_DLVR_API_KEY] && contentful[CNTFL_SPACE_ID] && contentful[CNTFL_TYPE_ID])) {
-        if (upload.length > 0) chrome.storage.local.set({ 'upload': [] });
+        if (upload.length > 0) browserAPI.storage.local.set({ 'upload': [] });
         return;
     }
     if (upload.length === 0) {
         if (hasOffscreenAPI) {
-            chrome.runtime.sendMessage({
+            browserAPI.runtime.sendMessage({
                 type: 'full-sync',
                 target: 'offscreen',
                 contentful: contentful
@@ -184,14 +186,14 @@ const uploadOffscreen = async () => {
     if (hasOffscreenAPI) {
         // Chrome path: use offscreen document
         if (!(await hasDocument())) {
-            await chrome.offscreen.createDocument({
+            await browserAPI.offscreen.createDocument({
                 url: OFFSCREEN_DOCUMENT_PATH,
-                reasons: [chrome.offscreen.Reason.DOM_PARSER],
+                reasons: [browserAPI.offscreen.Reason.DOM_PARSER],
                 justification: 'Parse DOM'
             });
         }
         const type = button.hasOwnProperty('code') ? 'upload-stolen-button' : 'remove-stolen-button';
-        chrome.runtime.sendMessage({
+        browserAPI.runtime.sendMessage({
             type: type,
             target: 'offscreen',
             button: button,
@@ -211,29 +213,29 @@ const handleMessages = async (message) => {
     if (message.target !== 'background') return;
     switch (message.type) {
         case 'stolen-button-uploaded':
-            const { upload } = await chrome.storage.local.get(UPLOAD);
+            const { upload } = await browserAPI.storage.local.get(UPLOAD);
             upload.pop();
-            chrome.runtime.sendMessage({
+            browserAPI.runtime.sendMessage({
                 type: 'full-refresh',
                 target: 'stolen-buttons',
             });
-            chrome.storage.local.set({ 'upload': upload });
+            browserAPI.storage.local.set({ 'upload': upload });
             break;
         case 'contentful-syncronized':
-            chrome.storage.local.set({ buttons: JSON.parse(message.value) });
+            browserAPI.storage.local.set({ buttons: JSON.parse(message.value) });
             closeOffscreenDocument();
             break;
         case 'update-maximum':
-            chrome.storage.local.set({ maximum: parseInt(message.value) });
+            browserAPI.storage.local.set({ maximum: parseInt(message.value) });
             break;
         case 'update-contentful':
-            chrome.storage.local.set({ contentful: JSON.parse(message.value) });
+            browserAPI.storage.local.set({ contentful: JSON.parse(message.value) });
             break;
         case 'update-ignore':
-            chrome.storage.local.set({ ignore: message.value.split(' ') });
+            browserAPI.storage.local.set({ ignore: message.value.split(' ') });
             break;
         case 'remove-all':
-            chrome.storage.local.set({ buttons: [], upload: [] })
+            browserAPI.storage.local.set({ buttons: [], upload: [] })
             break;
         case 'remove-buttons':
             handleRemoveButtons(JSON.parse(message.value));
@@ -257,7 +259,7 @@ const handleMessages = async (message) => {
 }
 
 const handleRemoveButtons = async (selected) => {
-    const { buttons, upload } = await chrome.storage.local.get([BUTTONS, UPLOAD]);
+    const { buttons, upload } = await browserAPI.storage.local.get([BUTTONS, UPLOAD]);
     selected.forEach(s => {
         for (let i = 0; i < buttons.length; i++) {
             const button = buttons[i];
@@ -269,19 +271,19 @@ const handleRemoveButtons = async (selected) => {
             }
         }
     });
-    chrome.storage.local.set({ buttons: buttons });
+    browserAPI.storage.local.set({ buttons: buttons });
     upload.unshift(...selected);
-    chrome.storage.local.set({ upload: upload });
+    browserAPI.storage.local.set({ upload: upload });
 }
 
-chrome.runtime.onMessage.addListener(handleMessages);
+browserAPI.runtime.onMessage.addListener(handleMessages);
 
 // ── Offscreen document management (Chrome only) ──────────────────────
 
 const closeOffscreenDocument = async () => {
     if (!hasOffscreenAPI) return;
     if (!(await hasDocument())) return;
-    await chrome.offscreen.closeDocument();
+    await browserAPI.offscreen.closeDocument();
 }
 
 const hasDocument = async () => {

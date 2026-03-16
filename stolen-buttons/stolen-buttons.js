@@ -1,3 +1,4 @@
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 const DELETE_MODE = 'delete-mode';
 const THEME_MODE = 'themeMode';
 let fullRefresh = false;
@@ -9,7 +10,7 @@ const THEME_ICONS = {
 };
 
 const sendToBackground = (type, value) => {
-    chrome.runtime.sendMessage({ type, value, target: 'background' });
+    browserAPI.runtime.sendMessage({ type, value, target: 'background' });
 }
 
 const updateDeleteButtonState = () => {
@@ -82,7 +83,7 @@ const renderButton = (button, isDeleteMode) => {
 }
 
 const getButtons = async () => {
-    const { buttons } = await chrome.storage.local.get('buttons');
+    const { buttons } = await browserAPI.storage.local.get('buttons');
     const container = document.getElementById('stolen-buttons');
     const isDeleteMode = document.body.classList.contains(DELETE_MODE);
     const filtered = buttons.filter(button => !button.hidden);
@@ -116,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initThemeMode();
 });
 
-chrome.storage.onChanged.addListener((obj) => {
+browserAPI.storage.onChanged.addListener((obj) => {
     if (obj.hasOwnProperty('buttons') || obj.hasOwnProperty('maximum')) {
         getButtons();
     }
@@ -154,7 +155,7 @@ const handleMessages = async (message) => {
     }
 }
 
-chrome.runtime.onMessage.addListener(handleMessages);
+browserAPI.runtime.onMessage.addListener(handleMessages);
 
 const applyThemeMode = (mode) => {
     if (mode === 'dark' || mode === 'light') {
@@ -175,7 +176,7 @@ const applyThemeMode = (mode) => {
 }
 
 const initThemeMode = async () => {
-    const stored = await chrome.storage.local.get(THEME_MODE);
+    const stored = await browserAPI.storage.local.get(THEME_MODE);
     const mode = ['system', 'light', 'dark'].includes(stored[THEME_MODE]) ? stored[THEME_MODE] : 'system';
     applyThemeMode(mode);
 }
@@ -186,7 +187,7 @@ document.querySelectorAll('.mode-button').forEach(button => {
         const current = button.dataset.mode || 'system';
         const idx = THEME_ORDER.indexOf(current);
         const next = THEME_ORDER[(idx + 1) % THEME_ORDER.length];
-        chrome.storage.local.set({ [THEME_MODE]: next });
+        browserAPI.storage.local.set({ [THEME_MODE]: next });
         applyThemeMode(next);
     });
 });

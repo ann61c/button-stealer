@@ -232,6 +232,7 @@ input[type="range"] {
   padding: 43px 0;
   border: none;
   -webkit-appearance: none;
+  appearance: none;
 }
 
 input[type="range"]::-webkit-slider-runnable-track {

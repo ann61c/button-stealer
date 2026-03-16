@@ -1,3 +1,4 @@
+const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
 const MAXIMUM = 'maximum';
 const CNTFL_MGMT_API_KEY = 'contentManagementApiKey';
 const CNTFL_DLVR_API_KEY = 'contentDeliveryApiKey';
@@ -78,7 +79,7 @@ const updateButtons = (buttons) => {
 }
 
 const getData = async () => {
-    const { maximum, contentful, ignore, buttons } = await chrome.storage.local.get([MAXIMUM, CONTENTFUL, IGNORE, BUTTONS]);
+    const { maximum, contentful, ignore, buttons } = await browserAPI.storage.local.get([MAXIMUM, CONTENTFUL, IGNORE, BUTTONS]);
     updateMaximum(maximum);
     updateContentful(contentful);
     updateIgnore(ignore);
@@ -86,7 +87,7 @@ const getData = async () => {
 }
 
 const sendToBackground = (type, value) => {
-    chrome.runtime.sendMessage({
+    browserAPI.runtime.sendMessage({
         type,
         value,
         target: 'background'
@@ -111,7 +112,7 @@ maximumInput.addEventListener('input', () => {
 
 document.getElementById('remove-all').addEventListener('click', () => {
     if (window.confirm("Remove buttons?") == true) {
-        chrome.runtime.sendMessage({
+        browserAPI.runtime.sendMessage({
             type: 'remove-all',
             target: 'background'
         });
@@ -156,5 +157,5 @@ document.getElementById('switch').addEventListener('click', ()=> {
 getData();
 const versionEl = document.getElementById('version-label');
 if (versionEl) {
-    versionEl.innerText = 'V' + chrome.runtime.getManifest().version;
+    versionEl.innerText = 'V' + browserAPI.runtime.getManifest().version;
 }

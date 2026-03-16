@@ -1,4 +1,5 @@
 (() => {
+    const browserAPI = typeof browser !== 'undefined' ? browser : chrome;
     const inheritable = [
         'font', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'line-height', 'cursor', 'azimuth', 'border-collapse',
         'border-spacing', 'caption-side', 'color', 'cursor', 'direction', 'elevation', 'empty-cells', 'font-family', 'font-size', 'font-style',
@@ -405,7 +406,7 @@
     }
 
     const stealButton = async () => {
-        let { buttons, maximum, ignore } = await chrome.storage.local.get(['buttons', 'maximum', 'ignore']);
+        let { buttons, maximum, ignore } = await browserAPI.storage.local.get(['buttons', 'maximum', 'ignore']);
         
         for (let i = 0; i < ignore.length; i++) {
             const listed = ignore[i].split('.');
@@ -454,10 +455,10 @@
         while (buttons.length >= maximum) {
             buttons.pop();
         }
-        const { upload } = await chrome.storage.local.get('upload');
+        const { upload } = await browserAPI.storage.local.get('upload');
         upload.unshift(button);
-        chrome.storage.local.set({ 'buttons': buttons });
-        chrome.storage.local.set({ 'upload': upload });
+        browserAPI.storage.local.set({ 'buttons': buttons });
+        browserAPI.storage.local.set({ 'upload': upload });
     }
 
     let timeoutId = -1;
@@ -487,7 +488,7 @@
     scheduleSteal();
 
     const sendColorModeToBackground = (isDark) => {
-        chrome.runtime.sendMessage({
+        browserAPI.runtime.sendMessage({
             type: 'color-scheme-changed',
             isDark: isDark,
             target: 'background'
