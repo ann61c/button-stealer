@@ -10,6 +10,12 @@ const UPLOAD = 'upload';
 const OFFSCREEN_DOCUMENT_PATH = '/offscreen/offscreen.html';
 let isDark = false;
 
+// Cross-browser: chrome.action (MV3) vs chrome.browserAction (MV2/Firefox)
+const browserAction = chrome.action || chrome.browserAction;
+
+// Feature-detect: is the offscreen API available? (Chrome only)
+const hasOffscreenAPI = typeof chrome.offscreen !== 'undefined';
+
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
     switch (reason) {
         case 'install':
@@ -61,6 +67,99 @@ chrome.storage.onChanged.addListener(async (obj) => {
     }
 });
 
+// ── Firefox-only: inline Contentful upload/remove/sync ───────────────
+// When running as a background page (Firefox), the Contentful libraries
+// are loaded via background.html, so createClient and contentful are
+// available as globals.
+
+const ffUpload = async (button, cntfl) => {
+    const client = createClient({ accessToken: cntfl[CNTFL_MGMT_API_KEY] });
+    let error = false;
+    await client.getSpace(cntfl[CNTFL_SPACE_ID])
+        .then(space => space.getEnvironment('master'))
+        .then(env => env.createEntry(cntfl[CNTFL_TYPE_ID], {
+            fields: {
+                name: { 'en-US': button.name },
+                code: { 'en-US': button.code },
+                source: { 'en-US': button.source },
+                text: { 'en-US': button.text }
+            }
+        }))
+        .then(entry => entry.publish())
+        .then(entry => console.log(`Entry ${entry.sys.id} published.`))
+        .catch(e => { console.log(e.message); error = true; })
+        .finally(() => { if (!error) ffSendDone(); });
+};
+
+const ffFind = async (name, cntfl) => {
+    const client = contentful.createClient({
+        accessToken: cntfl[CNTFL_DLVR_API_KEY],
+        space: cntfl[CNTFL_SPACE_ID]
+    });
+    const entries = await client.getEntries({
+        content_type: cntfl[CNTFL_TYPE_ID],
+        select: 'sys.createdAt',
+        order: '-sys.createdAt',
+        locale: 'en-US',
+        'fields.name[match]': name
+    });
+    return entries.items.map(entry => entry.sys.id);
+};
+
+const ffRemove = async (button, cntfl) => {
+    const ids = await ffFind(button.name, cntfl);
+    if (ids.length === 0) { ffSendDone(); return; }
+    const client = createClient({ accessToken: cntfl[CNTFL_MGMT_API_KEY] });
+    let error = false;
+    await client.getSpace(cntfl[CNTFL_SPACE_ID])
+        .then(space => space.getEnvironment('master'))
+        .then(env => env.getEntry(ids[0]))
+        .then(entry => entry.unpublish())
+        .then(entry => entry.delete())
+        .then(() => console.log('Entry deleted.'))
+        .catch(e => { console.log(e.message); error = true; })
+        .finally(() => { if (!error) ffSendDone(); });
+};
+
+const ffSync = async (cntfl) => {
+    const client = contentful.createClient({
+        accessToken: cntfl[CNTFL_DLVR_API_KEY],
+        space: cntfl[CNTFL_SPACE_ID]
+    });
+    const allButtons = [];
+    let skip = 0, total = Infinity;
+    while (skip < total) {
+        const entries = await client.getEntries({
+            content_type: cntfl[CNTFL_TYPE_ID],
+            locale: 'en-US',
+            order: '-sys.createdAt',
+            select: 'fields, sys.createdAt',
+            skip: skip
+        });
+        total = entries.total;
+        skip += entries.limit;
+        allButtons.push(...entries.items);
+    }
+    const value = allButtons.map((b, i) => ({
+        id: allButtons.length - i - 1,
+        name: b.fields.name,
+        code: b.fields.code,
+        source: b.fields.source,
+        text: b.fields.text,
+        stolenAt: b.sys.createdAt,
+    }));
+    chrome.storage.local.set({ buttons: value });
+};
+
+const ffSendDone = async () => {
+    const { upload } = await chrome.storage.local.get(UPLOAD);
+    upload.pop();
+    chrome.runtime.sendMessage({ type: 'full-refresh', target: 'stolen-buttons' });
+    chrome.storage.local.set({ 'upload': upload });
+};
+
+// ── Upload dispatcher (Chrome offscreen vs Firefox inline) ───────────
+
 const uploadOffscreen = async () => {
     const { upload, contentful } = await chrome.storage.local.get([UPLOAD, CONTENTFUL]);
     if (!(contentful[CNTFL_MGMT_API_KEY] && contentful[CNTFL_DLVR_API_KEY] && contentful[CNTFL_SPACE_ID] && contentful[CNTFL_TYPE_ID])) {
@@ -68,28 +167,44 @@ const uploadOffscreen = async () => {
         return;
     }
     if (upload.length === 0) {
-        chrome.runtime.sendMessage({
-            type: 'full-sync',
-            target: 'offscreen',
-            contentful: contentful
-        });
+        if (hasOffscreenAPI) {
+            chrome.runtime.sendMessage({
+                type: 'full-sync',
+                target: 'offscreen',
+                contentful: contentful
+            });
+        } else {
+            ffSync(contentful);
+        }
         return;
     }
-    if (!(await hasDocument())) {
-        await chrome.offscreen.createDocument({
-            url: OFFSCREEN_DOCUMENT_PATH,
-            reasons: [chrome.offscreen.Reason.DOM_PARSER],
-            justification: 'Parse DOM'
-        });
-    }
+
     const button = upload[upload.length - 1];
-    const type = button.hasOwnProperty('code') ? 'upload-stolen-button' : 'remove-stolen-button';
-    chrome.runtime.sendMessage({
-        type: type,
-        target: 'offscreen',
-        button: button,
-        contentful: contentful
-    });
+
+    if (hasOffscreenAPI) {
+        // Chrome path: use offscreen document
+        if (!(await hasDocument())) {
+            await chrome.offscreen.createDocument({
+                url: OFFSCREEN_DOCUMENT_PATH,
+                reasons: [chrome.offscreen.Reason.DOM_PARSER],
+                justification: 'Parse DOM'
+            });
+        }
+        const type = button.hasOwnProperty('code') ? 'upload-stolen-button' : 'remove-stolen-button';
+        chrome.runtime.sendMessage({
+            type: type,
+            target: 'offscreen',
+            button: button,
+            contentful: contentful
+        });
+    } else {
+        // Firefox path: call Contentful directly
+        if (button.hasOwnProperty('code')) {
+            ffUpload(button, contentful);
+        } else {
+            ffRemove(button, contentful);
+        }
+    }
 }
 
 const handleMessages = async (message) => {
@@ -126,7 +241,7 @@ const handleMessages = async (message) => {
         case 'color-scheme-changed':
             if (isDark !== message.isDark) {
                 isDark = message.isDark;
-                chrome.action.setIcon({
+                browserAction.setIcon({
                     "path": {
                         "16": `/images/icon-${isDark? "dark" : "light"}-16.png`,
                         "32": `/images/icon-${isDark? "dark" : "light"}-32.png`,
@@ -161,18 +276,22 @@ const handleRemoveButtons = async (selected) => {
 
 chrome.runtime.onMessage.addListener(handleMessages);
 
+// ── Offscreen document management (Chrome only) ──────────────────────
+
 const closeOffscreenDocument = async () => {
-    if (!(await hasDocument())) {
-        return;
-    }
+    if (!hasOffscreenAPI) return;
+    if (!(await hasDocument())) return;
     await chrome.offscreen.closeDocument();
 }
 
 const hasDocument = async () => {
-    const matchedClients = await clients.matchAll();
-    for (const client of matchedClients) {
-        if (client.url.endsWith(OFFSCREEN_DOCUMENT_PATH)) {
-            return true;
+    if (!hasOffscreenAPI) return false;
+    if (typeof clients !== 'undefined' && clients.matchAll) {
+        const matchedClients = await clients.matchAll();
+        for (const client of matchedClients) {
+            if (client.url.endsWith(OFFSCREEN_DOCUMENT_PATH)) {
+                return true;
+            }
         }
     }
     return false;

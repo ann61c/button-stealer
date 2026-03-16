@@ -253,6 +253,24 @@ input[type="range"]::-webkit-slider-thumb {
   transition: border .2s;
 }
 
+input[type="range"]::-moz-range-track {
+  background: var(--color-foreground);
+  height: 2px;
+  border: none;
+  transition: background-color .2s;
+}
+
+input[type="range"]::-moz-range-thumb {
+  appearance: none;
+  background-color: var(--color-background);
+  height: 88px;
+  width: 88px;
+  border-radius: 44px;
+  border: 2px solid var(--color-foreground);
+  box-sizing: border-box;
+  transition: border .2s;
+}
+
 input[type="range"]:focus {
   outline: none;
 }
@@ -262,6 +280,14 @@ input[type="range"]:focus::-webkit-slider-runnable-track {
 }
 
 input[type="range"]:focus::-webkit-slider-thumb {
+  border-color: var(--color-orange);
+}
+
+input[type="range"]:focus::-moz-range-track {
+  background: var(--color-orange);
+}
+
+input[type="range"]:focus::-moz-range-thumb {
   border-color: var(--color-orange);
 }
 

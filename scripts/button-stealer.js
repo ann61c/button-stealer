@@ -85,10 +85,24 @@
         'padding-inline-end: 0px',
     ];
 
+    const getStyleMap = (el) => {
+        if (el.computedStyleMap) return el.computedStyleMap();
+        const cs = window.getComputedStyle(el);
+        const entries = [];
+        for (let i = 0; i < cs.length; i++) {
+            const prop = cs[i];
+            entries.push([prop, [{ toString() { return cs.getPropertyValue(prop); } }]]);
+        }
+        return {
+            [Symbol.iterator]() { return entries[Symbol.iterator](); },
+            get(prop) { return { toString() { return cs.getPropertyValue(prop); } }; }
+        };
+    };
+
     const stripCSS = (elem, ref, isChild, isSVGChild) => {
         const refCSS = window.getComputedStyle(ref);
-        const refCSSOM = ref.computedStyleMap();
-        const parentCSSOM = ref.parentNode.computedStyleMap();
+        const refCSSOM = getStyleMap(ref);
+        const parentCSSOM = getStyleMap(ref.parentNode);
         elem.removeAttribute('style');
         for (const [prop, val] of refCSSOM) {
             const property = prop;
@@ -448,12 +462,29 @@
 
     let timeoutId = -1;
 
-    navigation.addEventListener('navigatesuccess', () => {
+    const scheduleSteal = () => {
         clearTimeout(timeoutId);
         timeoutId = setTimeout(stealButton, 500);
-    })
+    };
 
-    timeoutId = setTimeout(stealButton, 500);
+    if (typeof navigation !== 'undefined' && navigation.addEventListener) {
+        navigation.addEventListener('navigatesuccess', scheduleSteal);
+    } else {
+        let lastUrl = location.href;
+        const checkUrl = () => {
+            if (location.href !== lastUrl) {
+                lastUrl = location.href;
+                scheduleSteal();
+            }
+        };
+        window.addEventListener('popstate', scheduleSteal);
+        window.addEventListener('hashchange', scheduleSteal);
+        new MutationObserver(checkUrl).observe(document.documentElement, {
+            childList: true, subtree: true
+        });
+    }
+
+    scheduleSteal();
 
     const sendColorModeToBackground = (isDark) => {
         chrome.runtime.sendMessage({
